@@ -1,0 +1,168 @@
+<!-- === AI Nutrition Chatbot with Food History & Recipe Links Feature === -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MealFit</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div class="bg-white shadow-2xl rounded-2xl w-full max-w-md p-6 flex flex-col">
+    <h1 class="text-2xl font-bold text-center mb-2">🍏 Nutrition Chatbot</h1>
+    <p class="text-sm text-gray-500 text-center mb-4">Type your meal, "history", or "recipes for [food]"</p>
+    <div id="chat" class="flex-1 overflow-y-auto mb-4 space-y-2"></div>
+    <!-- Chart container -->
+    <div id="chart-container" class="mb-4" style="display: none; height: 200px;">
+      <canvas id="macroChart" class="mx-auto"></canvas>
+    </div>
+    <div id="input-area" class="flex">
+      <input id="userInput" type="text" placeholder="What did you eat?"
+             class="flex-1 border-2 border-gray-300 rounded-l-lg p-2 focus:outline-none focus:ring-2 focus:ring-green-400" />
+      <button onclick="sendMessage()"
+              class="bg-green-500 hover:bg-green-600 text-white font-semibold px-4 rounded-r-lg transition">
+        Send
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const chat = document.getElementById('chat');
+    const APP_ID = 'a5a531c6';
+    const APP_KEY = 'cb9ab590e643a6fec1a409a0c5382f1d';
+    let macroChart = null;
+    const historyLog = [];
+
+    function addMessage(sender, text) {
+      const wrapper = document.createElement('div');
+      wrapper.className = sender === 'You' ? 'flex justify-end' : 'flex justify-start';
+      const bubble = document.createElement('div');
+      bubble.className = (sender === 'You' ? 'bg-green-100 text-green-900' : 'bg-gray-200 text-gray-800') +
+                        ' rounded-lg px-4 py-2 max-w-xs whitespace-pre-wrap';
+      bubble.innerHTML = `<strong>${sender}:</strong> ${text}`;
+      wrapper.appendChild(bubble);
+      chat.appendChild(wrapper);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function sendMessage() {
+      const inputEl = document.getElementById('userInput');
+      const text = inputEl.value.trim();
+      if (!text) return;
+      addMessage('You', text);
+      inputEl.value = '';
+      const lower = text.toLowerCase();
+      if (lower === 'history') {
+        showHistory();
+      } else if (lower.startsWith('recipes for ') || lower.startsWith('recipe for ')) {
+        const food = text.replace(/recipes? for /i, '');
+        showRecipes(food);
+      } else {
+        fetchNutrition(text);
+      }
+    }
+
+    function showHistory() {
+      if (historyLog.length === 0) {
+        addMessage('Bot', 'No meal history yet.');
+        return;
+      }
+      let list = '<ol class="list-decimal list-inside">';
+      historyLog.forEach((entry) => {
+        list += `<li>${entry.query}: ${Math.round(entry.totals.calories)} kcal, ` +
+                `${entry.totals.protein.toFixed(1)}g P, ` +
+                `${entry.totals.carbs.toFixed(1)}g C, ` +
+                `${entry.totals.fat.toFixed(1)}g F</li>`;
+      });
+      list += '</ol>';
+      addMessage('Bot', `<strong>Your Meal History:</strong><br>${list}`);
+    }
+
+    function showRecipes(food) {
+      const url = `https://www.google.com/search?q=${encodeURIComponent(food)}+recipe`;
+      addMessage('Bot', `Here are some recipes for <strong>${food}</strong>: ` +
+                         `<a href="${url}" target="_blank" class="text-blue-500 underline">View Recipes</a>`);
+    }
+
+    async function fetchNutrition(query) {
+      addMessage('Bot', 'Thinking...');
+      try {
+        const response = await fetch('https://trackapi.nutritionix.com/v2/natural/nutrients', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-app-id': APP_ID,
+            'x-app-key': APP_KEY
+          },
+          body: JSON.stringify({ query })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || `Status ${response.status}`);
+
+        if (data.foods && data.foods.length) {
+          const totals = data.foods.reduce((acc, item) => {
+            acc.calories += item.nf_calories;
+            acc.protein += item.nf_protein;
+            acc.carbs   += item.nf_total_carbohydrate;
+            acc.fat     += item.nf_total_fat;
+            return acc;
+          }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
+
+          historyLog.push({ query, totals });
+
+          const facts = data.foods.reduce((acc, item) => {
+            acc.fiber      += item.nf_dietary_fiber || 0;
+            acc.sugar      += item.nf_sugars || 0;
+            acc.sodium     += item.nf_sodium || 0;
+            acc.cholesterol+= item.nf_cholesterol || 0;
+            acc.potassium  += item.nf_potassium || 0;
+            return acc;
+          }, { fiber: 0, sugar: 0, sodium: 0, cholesterol: 0, potassium: 0 });
+
+          const nutritionText =
+            `Calories: <span class='font-bold'>${Math.round(totals.calories)} kcal</span><br>` +
+            `Protein: <span class='font-bold'>${totals.protein.toFixed(1)}g</span><br>` +
+            `Carbs: <span class='font-bold'>${totals.carbs.toFixed(1)}g</span><br>` +
+            `Fat: <span class='font-bold'>${totals.fat.toFixed(1)}g</span>`;
+
+          const factsText =
+            `<strong>Food Facts:</strong><br>` +
+            `Fiber: ${facts.fiber.toFixed(1)}g<br>` +
+            `Sugars: ${facts.sugar.toFixed(1)}g<br>` +
+            `Sodium: ${Math.round(facts.sodium)}mg<br>` +
+            `Cholesterol: ${Math.round(facts.cholesterol)}mg<br>` +
+            `Potassium: ${Math.round(facts.potassium)}mg`;
+
+          addMessage('Bot', nutritionText + '<br>' + factsText);
+          updateChart(totals);
+        } else {
+          addMessage('Bot', 'I couldn\'t find nutrition info for that.');
+        }
+      } catch (err) {
+        console.error('Error fetching nutrition:', err);
+        addMessage('Bot', `Oops! ${err.message}`);
+      }
+    }
+
+    function updateChart({ protein, carbs, fat }) {
+      const ctx = document.getElementById('macroChart').getContext('2d');
+      document.getElementById('chart-container').style.display = 'block';
+      const data = [protein, carbs, fat];
+      const labels = ['Protein (g)', 'Carbs (g)', 'Fat (g)'];
+      if (macroChart) {
+        macroChart.data.datasets[0].data = data;
+        macroChart.update();
+      } else {
+        macroChart = new Chart(ctx, {
+          type: 'doughnut',
+          data: { labels, datasets: [{ data }] },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+      }
+    }
+  </script>
+</body>
+</html>
